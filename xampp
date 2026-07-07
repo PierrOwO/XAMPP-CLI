@@ -1,10 +1,14 @@
 #!/bin/bash
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 
 XAMPP="/Applications/XAMPP/xamppfiles/xampp"
+MYSQLADMIN="/Applications/XAMPP/xamppfiles/bin/mysqladmin"
 MYSQLD="/Applications/XAMPP/xamppfiles/sbin/mysqld"
 HTTPD="/Applications/XAMPP/xamppfiles/bin/httpd"
+
+PHPMYADMIN_URL="http://localhost/phpmyadmin"
+
 
 GREEN="\033[32m"
 RED="\033[31m"
@@ -12,6 +16,19 @@ YELLOW="\033[33m"
 CYAN="\033[36m"
 BOLD="\033[1m"
 RESET="\033[0m"
+
+
+ok() {
+    echo -e "${GREEN}✓${RESET} $1"
+}
+
+fail() {
+    echo -e "${RED}✗${RESET} $1"
+}
+
+warn() {
+    echo -e "${YELLOW}!${RESET} $1"
+}
 
 
 spinner() {
@@ -23,13 +40,18 @@ spinner() {
     local i=0
 
     while kill -0 "$pid" 2>/dev/null; do
+
         printf "\r%s %s" "$message" "${frames[$i]}"
+
         i=$(( (i+1) % 6 ))
+
         sleep 0.1
+
     done
 
     printf "\r%s ${GREEN}✓${RESET}\n" "$message"
 }
+
 
 
 run() {
@@ -40,42 +62,58 @@ run() {
     sudo -v
 
     "$@" >/tmp/xampp-cli.log 2>&1 &
+
     local pid=$!
 
     spinner "$pid" "$message"
 
     wait "$pid"
 
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}✗ Failed${RESET}"
-        cat /tmp/xampp-cli.log
-        return 1
-    fi
 }
+
 
 
 mysql_running() {
 
-    sudo "$XAMPP" status 2>/dev/null | grep -qi "MySQL is running"
+    "$MYSQLADMIN" ping \
+    -u root \
+    --socket="/Applications/XAMPP/xamppfiles/var/mysql/mysql.sock" \
+    >/dev/null 2>&1
 
 }
+
 
 
 apache_running() {
 
-    sudo "$XAMPP" status 2>/dev/null | grep -qi "Apache is running"
+    pgrep -f "$HTTPD" >/dev/null
 
 }
+
+
+
+port_used() {
+
+    lsof -i :"$1" >/dev/null 2>&1
+
+}
+
 
 
 start_mysql() {
 
     if mysql_running; then
-        echo -e "MySQL: ${YELLOW}already running${RESET}"
+
+        echo "MySQL: already running"
+
     else
+
         run "Starting MySQL..." sudo "$XAMPP" startmysql
+
     fi
+
 }
+
 
 
 stop_mysql() {
@@ -84,45 +122,46 @@ stop_mysql() {
 
         run "Stopping MySQL..." sudo "$XAMPP" stopmysql
 
-        sleep 2
-
-        if mysql_running; then
-            echo -e "${YELLOW}Force stopping MySQL...${RESET}"
-
-            PID=$(pgrep -f "$MYSQLD")
-
-            if [ -n "$PID" ]; then
-                sudo kill -9 "$PID"
-            fi
-        fi
-
-        echo -e "MySQL: ${GREEN}stopped${RESET}"
-
     else
-        echo -e "MySQL: ${YELLOW}already stopped${RESET}"
+
+        echo "MySQL: already stopped"
+
     fi
+
 }
+
 
 
 start_apache() {
 
     if apache_running; then
-        echo -e "Apache: ${YELLOW}already running${RESET}"
+
+        echo "Apache: already running"
+
     else
+
         run "Starting Apache..." sudo "$XAMPP" startapache
+
     fi
+
 }
+
 
 
 stop_apache() {
 
     if apache_running; then
+
         run "Stopping Apache..." sudo "$XAMPP" stopapache
-        echo -e "Apache: ${GREEN}stopped${RESET}"
+
     else
-        echo -e "Apache: ${YELLOW}already stopped${RESET}"
+
+        echo "Apache: already stopped"
+
     fi
+
 }
+
 
 
 status() {
@@ -131,97 +170,176 @@ status() {
     echo -e "${BOLD}XAMPP Status${RESET}"
     echo "------------"
 
+
     if mysql_running; then
-        echo -e "MySQL:  ${GREEN}running${RESET}"
+        echo -e "MySQL:      ${GREEN}running${RESET}"
     else
-        echo -e "MySQL:  ${RED}stopped${RESET}"
+        echo -e "MySQL:      ${RED}stopped${RESET}"
     fi
 
 
     if apache_running; then
-        echo -e "Apache: ${GREEN}running${RESET}"
+        echo -e "Apache:     ${GREEN}running${RESET}"
     else
-        echo -e "Apache: ${RED}stopped${RESET}"
+        echo -e "Apache:     ${RED}stopped${RESET}"
     fi
 
+
+    if port_used 80; then
+        echo -e "HTTP:       ${GREEN}80 open${RESET}"
+    else
+        echo -e "HTTP:       ${RED}80 closed${RESET}"
+    fi
+
+
+    if port_used 3306; then
+        echo -e "MySQL Port: ${GREEN}3306 open${RESET}"
+    else
+        echo -e "MySQL Port: ${RED}3306 closed${RESET}"
+    fi
+
+
     echo ""
 
 }
 
 
-start_all() {
+
+ports() {
 
     echo ""
-    echo -e "${CYAN}Starting XAMPP...${RESET}"
-    echo ""
-
-    start_mysql
-    start_apache
+    echo -e "${BOLD}XAMPP Ports${RESET}"
+    echo "------------"
 
     echo ""
-    echo -e "${GREEN}XAMPP is ready.${RESET}"
-    echo ""
 
-}
+    echo "Apache:"
+    lsof -i :80 | tail -n +2 || echo "No process"
 
-
-stop_all() {
 
     echo ""
-    echo -e "${CYAN}Stopping XAMPP...${RESET}"
-    echo ""
 
-    stop_apache
-    stop_mysql
+    echo "MySQL:"
+    lsof -i :3306 | tail -n +2 || echo "No process"
 
-    echo ""
-    echo -e "${GREEN}XAMPP stopped.${RESET}"
+
     echo ""
 
 }
 
 
-help() {
+
+doctor() {
 
     echo ""
-    echo -e "${BOLD}XAMPP CLI v$VERSION${RESET}"
+    echo -e "${BOLD}XAMPP Doctor${RESET}"
+    echo "------------"
     echo ""
-    echo "Usage:"
+
+
+    if [ -d "/Applications/XAMPP" ]; then
+        ok "XAMPP installation found"
+    else
+        fail "XAMPP installation missing"
+    fi
+
+
+    if [ -f "$XAMPP" ]; then
+        ok "XAMPP controller found"
+    else
+        fail "XAMPP controller missing"
+    fi
+
+
+    if [ -f "$MYSQLD" ]; then
+        ok "MySQL binary found"
+    else
+        fail "MySQL binary missing"
+    fi
+
+
+    if [ -f "$HTTPD" ]; then
+        ok "Apache binary found"
+    else
+        fail "Apache binary missing"
+    fi
+
+
+
     echo ""
-    echo "  xampp start"
-    echo "  xampp stop"
-    echo "  xampp restart"
+
+    echo "Checking ports..."
+
+
+    if port_used 80; then
+        ok "Port 80 available"
+    else
+        warn "Port 80 not active"
+    fi
+
+
+    if port_used 3306; then
+        ok "Port 3306 active"
+    else
+        warn "Port 3306 not active"
+    fi
+
+
+
     echo ""
-    echo "  xampp mysql start"
-    echo "  xampp mysql stop"
-    echo ""
-    echo "  xampp apache start"
-    echo "  xampp apache stop"
-    echo ""
-    echo "  xampp status"
-    echo "  xampp help"
+
+    if mysql_running; then
+        ok "MySQL connection successful"
+    else
+        warn "MySQL not running"
+    fi
+
+
+
+    if apache_running; then
+        ok "Apache process detected"
+    else
+        warn "Apache not running"
+    fi
+
+
     echo ""
 
 }
+
+
+
+open_phpmyadmin() {
+
+    echo "Opening phpMyAdmin..."
+
+    open "$PHPMYADMIN_URL"
+
+}
+
 
 
 case "$1:$2" in
 
 
 start:)
-    start_all
+    start_mysql
+    start_apache
 ;;
 
 
 stop:)
-    stop_all
+    stop_apache
+    stop_mysql
 ;;
 
 
 restart:)
-    stop_all
+    stop_apache
+    stop_mysql
     sleep 2
-    start_all
+    start_mysql
+    start_apache
 ;;
 
 
@@ -250,13 +368,49 @@ status:)
 ;;
 
 
+ports:)
+    ports
+;;
+
+
+doctor:)
+    doctor
+;;
+
+
+open:phpmyadmin)
+    open_phpmyadmin
+;;
+
+
 help:)
-    help
+    echo ""
+    echo "XAMPP CLI v$VERSION"
+    echo ""
+    echo "Commands:"
+    echo ""
+    echo "  xampp start"
+    echo "  xampp stop"
+    echo "  xampp restart"
+    echo ""
+    echo "  xampp mysql start"
+    echo "  xampp mysql stop"
+    echo ""
+    echo "  xampp apache start"
+    echo "  xampp apache stop"
+    echo ""
+    echo "  xampp status"
+    echo "  xampp ports"
+    echo "  xampp doctor"
+    echo "  xampp open phpmyadmin"
+    echo ""
+
 ;;
 
 
 *)
-    help
+    echo "Unknown command. Use: xampp help"
 ;;
+
 
 esac
