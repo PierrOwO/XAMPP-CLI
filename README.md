@@ -1,8 +1,16 @@
 # XAMPP CLI for Linux & macOS
 
-A simple command-line interface for managing XAMPP services on Linux & macOS.
+A simple and powerful command-line interface for managing XAMPP services on Linux and macOS.
 
-This tool allows you to control XAMPP services directly from the terminal without opening the XAMPP Manager application.
+XAMPP CLI allows you to control XAMPP directly from the terminal without opening the XAMPP Manager application.
+
+The project provides:
+- service management
+- automatic XAMPP detection
+- configuration management
+- diagnostics
+- process monitoring
+- automatic MySQL force shutdown handling
 
 Supported services:
 
@@ -11,25 +19,49 @@ Supported services:
 
 ---
 
-## Requirements
+# Features
 
-- macOS
-- XAMPP installed in:
+- Start and stop XAMPP services
+- Restart complete XAMPP environment
+- Automatic XAMPP installation detection
+- Config file support
+- Service status monitoring
+- XAMPP diagnostics
+- MySQL process recovery
+- Open phpMyAdmin from terminal
+- Terminal animations during operations
+
+---
+
+# Requirements
+
+- macOS or Linux
+- XAMPP installed
+
+Default macOS location:
 
 ```bash
 /Applications/XAMPP
+```
+
+Linux location:
+
+```bash
+/opt/lampp
 ```
 
 - Administrator access (`sudo`)
 
 ---
 
-## Installation
+# Installation
 
-Clone or download the project:
+Clone or download the repository:
 
 ```bash
-cd ~/XAMPP-CLI
+git clone https://github.com/PierrOwO/XAMPP-CLI.git
+
+cd XAMPP-CLI
 ```
 
 Make scripts executable:
@@ -38,13 +70,13 @@ Make scripts executable:
 chmod +x install.sh xampp
 ```
 
-Run the installer:
+Run installer:
 
 ```bash
 sudo ./install.sh
 ```
 
-After installation, the `xampp` command will be available globally:
+After installation, the command will be available globally:
 
 ```bash
 xampp
@@ -54,21 +86,62 @@ xampp
 
 # Usage
 
-## Check XAMPP Status
-
-Check current service status:
+Show available commands:
 
 ```bash
-xampp status
+xampp help
 ```
 
-Example output:
+---
+
+# Service Management
+
+## Start XAMPP
+
+Starts Apache and MySQL:
+
+```bash
+xampp start
+```
+
+Example:
 
 ```text
-XAMPP Status
-------------
-MySQL:  running
-Apache: stopped
+Starting XAMPP...
+
+Starting MySQL... ✓
+Starting Apache... ✓
+
+XAMPP is ready.
+```
+
+---
+
+## Stop XAMPP
+
+Stops Apache and MySQL:
+
+```bash
+xampp stop
+```
+
+Example:
+
+```text
+Stopping XAMPP...
+
+Stopping Apache... ✓
+Stopping MySQL... ✓
+
+XAMPP stopped.
+```
+
+---
+
+## Restart XAMPP
+
+```bash
+xampp restart
 ```
 
 ---
@@ -99,17 +172,17 @@ Example:
 
 ```text
 Stopping MySQL... ✓
-MySQL stopped.
+MySQL: stopped
 ```
 
-If XAMPP fails to properly stop the MySQL process, the CLI automatically detects it and forces shutdown.
+If XAMPP fails to completely stop MySQL, XAMPP CLI detects the remaining process and automatically forces shutdown:
 
----
+```text
+XAMPP did not stop MySQL, forcing shutdown...
 
-## Restart MySQL
+Force stopping MySQL process: 91238
 
-```bash
-xampp mysql restart
+MySQL: stopped
 ```
 
 ---
@@ -140,55 +213,168 @@ Example:
 
 ```text
 Stopping Apache... ✓
+Apache: stopped
 ```
 
 ---
 
-## Restart Apache
+# Status
+
+Check running services:
 
 ```bash
-xampp apache restart
+xampp status
+```
+
+Example:
+
+```text
+XAMPP Status
+------------
+
+MySQL:  running
+Apache: stopped
 ```
 
 ---
 
-# Project Structure
+# Diagnostics
+
+Run system checks:
+
+```bash
+xampp doctor
+```
+
+Example:
 
 ```text
-XAMPP-CLI
-│
-├── install.sh
-├── xampp
-└── README.md
+XAMPP Doctor
+------------
+
+✓ XAMPP detected
+✓ MySQL detected
+✓ Apache detected
+```
+
+---
+
+# Configuration
+
+Display current configuration:
+
+```bash
+xampp config
+```
+
+Example:
+
+```text
+XAMPP CLI Config
+----------------
+
+XAMPP_PATH=/Applications/XAMPP/xamppfiles/xampp
+MYSQL_PORT=3306
+APACHE_PORT=80
+PHPMYADMIN_URL=http://localhost/phpmyadmin
+```
+
+---
+
+# Setup
+
+Configure XAMPP manually:
+
+```bash
+xampp setup
+```
+
+The setup wizard will:
+- search for XAMPP automatically
+- allow custom paths
+- create configuration file
+
+Configuration is stored in:
+
+```bash
+~/.xampp-cli/config
+```
+
+---
+
+# Information
+
+Show XAMPP CLI information:
+
+```bash
+xampp info
+```
+
+Example:
+
+```text
+XAMPP CLI Info
+--------------
+
+Version:
+1.4.1
+
+XAMPP:
+/Applications/XAMPP/xamppfiles/xampp
+```
+
+---
+
+# phpMyAdmin
+
+Open phpMyAdmin:
+
+```bash
+xampp open phpmyadmin
+```
+
+Default address:
+
+```text
+http://localhost/phpmyadmin
 ```
 
 ---
 
 # How It Works
 
-The CLI communicates directly with the XAMPP control script:
+XAMPP CLI communicates directly with the official XAMPP control script:
 
 ```bash
 /Applications/XAMPP/xamppfiles/xampp
 ```
 
-The default XAMPP status command is not used because some XAMPP macOS versions return incorrect service states.
+The CLI adds an additional management layer with:
 
-Instead, XAMPP CLI checks the real running processes.
+- automatic detection
+- process checking
+- improved output
+- error handling
 
-## MySQL process
+---
+
+# Process Detection
+
+XAMPP CLI checks real running processes.
+
+## MySQL
 
 ```bash
 /Applications/XAMPP/xamppfiles/sbin/mysqld
 ```
 
-## Apache process
+## Apache
 
 ```bash
 /Applications/XAMPP/xamppfiles/bin/httpd
 ```
 
-This provides accurate service detection.
+This prevents incorrect service states caused by some XAMPP versions.
 
 ---
 
@@ -200,32 +386,24 @@ Starting and stopping services requires administrator privileges:
 sudo
 ```
 
-The CLI uses the macOS authentication system.
+XAMPP CLI:
 
-Passwords are never stored.
+- does not store passwords
+- uses the operating system authentication system
+- only requests administrator access when required
 
 ---
 
-# Example Workflow
+# Project Structure
 
-Start development environment:
-
-```bash
-xampp mysql start
-xampp apache start
-```
-
-Check services:
-
-```bash
-xampp status
-```
-
-Stop services:
-
-```bash
-xampp apache stop
-xampp mysql stop
+```text
+XAMPP-CLI
+│
+├── install.sh
+├── xampp
+├── README.md
+├── LICENSE
+└── .gitignore
 ```
 
 ---
@@ -238,11 +416,15 @@ Possible future commands:
 xampp logs mysql
 xampp logs apache
 
+xampp backup
+
+xampp security
+
+xampp ports
+
 xampp php version
 
-xampp open phpmyadmin
-
-xampp backup mysql
+xampp uninstall
 ```
 
 ---
@@ -250,6 +432,8 @@ xampp backup mysql
 # Author
 
 Created by [PierrOwO](https://github.com/PierrOwO)
+
+---
 
 # License
 
