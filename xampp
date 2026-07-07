@@ -1,9 +1,10 @@
 #!/bin/bash
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 
 CONFIG_DIR="$HOME/.xampp-cli"
 CONFIG_FILE="$CONFIG_DIR/config"
+
 
 GREEN="\033[32m"
 RED="\033[31m"
@@ -13,35 +14,90 @@ BOLD="\033[1m"
 RESET="\033[0m"
 
 
-ok(){
-    echo -e "${GREEN}✓${RESET} $1"
+
+spinner(){
+
+    local pid=$1
+    local message=$2
+
+    local frames=("⠋" "⠙" "⠸" "⠴" "⠦" "⠇")
+    local i=0
+
+
+    while kill -0 "$pid" 2>/dev/null; do
+
+        printf "\r%s %s" "$message" "${frames[$i]}"
+
+        i=$(( (i+1) % 6 ))
+
+        sleep 0.1
+
+    done
+
+
+    printf "\r%s ${GREEN}✓${RESET}\n" "$message"
+
 }
 
-fail(){
-    echo -e "${RED}✗${RESET} $1"
+
+
+run(){
+
+    local message="$1"
+    shift
+
+
+    sudo -v
+
+
+    "$@" >/tmp/xampp-cli.log 2>&1 &
+
+    local pid=$!
+
+
+    spinner "$pid" "$message"
+
+
+    wait "$pid"
+
+
+    if [ $? -ne 0 ]; then
+
+        echo -e "${RED}✗ Failed${RESET}"
+
+        cat /tmp/xampp-cli.log
+
+        return 1
+
+    fi
+
 }
 
-warn(){
-    echo -e "${YELLOW}!${RESET} $1"
-}
 
 
 detect_xampp(){
 
     PATHS=(
+
         "/Applications/XAMPP/xamppfiles/xampp"
         "/Applications/xampp/xamppfiles/xampp"
         "/opt/lampp/lampp"
+
     )
 
 
     for path in "${PATHS[@]}"
     do
+
         if [ -f "$path" ]; then
+
             echo "$path"
             return
+
         fi
+
     done
+
 }
 
 
@@ -50,15 +106,17 @@ create_config(){
 
     mkdir -p "$CONFIG_DIR"
 
-    XAMPP_FOUND=$(detect_xampp)
 
-    if [ -z "$XAMPP_FOUND" ]; then
-        return 1
+    FOUND=$(detect_xampp)
+
+
+    if [ -z "$FOUND" ]; then
+        return
     fi
 
 
-    cat > "$CONFIG_FILE" <<EOF
-XAMPP_PATH=$XAMPP_FOUND
+cat > "$CONFIG_FILE" <<EOF
+XAMPP_PATH=$FOUND
 MYSQL_PORT=3306
 APACHE_PORT=80
 PHPMYADMIN_URL=http://localhost/phpmyadmin
@@ -75,43 +133,35 @@ setup(){
     echo "-----------"
     echo ""
 
-    echo "Searching for XAMPP..."
-    echo ""
-
 
     FOUND=$(detect_xampp)
 
 
     if [ -n "$FOUND" ]; then
 
-        ok "Found:"
-        echo "  $FOUND"
+        echo "Found:"
+        echo "$FOUND"
         echo ""
 
         read -p "Use this installation? [Y/n]: " answer
 
 
         if [[ "$answer" =~ ^[Nn]$ ]]; then
-
-            read -p "Enter XAMPP path: " FOUND
-
+            read -p "XAMPP path: " FOUND
         fi
 
     else
 
-        warn "Automatic detection failed"
-        read -p "Enter XAMPP path: " FOUND
+        read -p "XAMPP path: " FOUND
 
     fi
 
 
 
-    if [ -f "$FOUND" ]; then
-
-        mkdir -p "$CONFIG_DIR"
+    mkdir -p "$CONFIG_DIR"
 
 
-        cat > "$CONFIG_FILE" <<EOF
+cat > "$CONFIG_FILE" <<EOF
 XAMPP_PATH=$FOUND
 MYSQL_PORT=3306
 APACHE_PORT=80
@@ -119,48 +169,60 @@ PHPMYADMIN_URL=http://localhost/phpmyadmin
 EOF
 
 
-        echo ""
-        ok "Configuration saved"
-        echo ""
-
-    else
-
-        fail "Invalid XAMPP path"
-
-    fi
+    echo ""
+    echo -e "${GREEN}✓${RESET} Configuration saved"
+    echo ""
 
 }
 
 
 
 if [ ! -f "$CONFIG_FILE" ]; then
-    create_config >/dev/null 2>&1
+
+    create_config
+
 fi
 
 
 
 if [ -f "$CONFIG_FILE" ]; then
+
     source "$CONFIG_FILE"
+
 fi
 
 
 
 XAMPP="${XAMPP_PATH:-$(detect_xampp)}"
 
-XAMPP_DIR="$(dirname "$(dirname "$XAMPP")")"
 
-MYSQLADMIN="$XAMPP_DIR/bin/mysqladmin"
+# IMPORTANT:
+# /Applications/XAMPP/xamppfiles/xampp
+# dirname -> /Applications/XAMPP/xamppfiles
+
+XAMPP_DIR="$(dirname "$XAMPP")"
+
+
 MYSQLD="$XAMPP_DIR/sbin/mysqld"
 HTTPD="$XAMPP_DIR/bin/httpd"
+
+MYSQLADMIN="$XAMPP_DIR/bin/mysqladmin"
 
 
 
 mysql_running(){
 
-    "$MYSQLADMIN" ping \
-    -u root \
-    --socket="$XAMPP_DIR/var/mysql/mysql.sock" \
-    >/dev/null 2>&1
+    if sudo "$XAMPP" status 2>/dev/null | grep -qi "MySQL is running"; then
+        return 0
+    fi
+
+
+    if pgrep -f "$MYSQLD" >/dev/null; then
+        return 0
+    fi
+
+
+    return 1
 
 }
 
@@ -168,7 +230,17 @@ mysql_running(){
 
 apache_running(){
 
-    pgrep -f "$HTTPD" >/dev/null
+    if sudo "$XAMPP" status 2>/dev/null | grep -qi "Apache is running"; then
+        return 0
+    fi
+
+
+    if pgrep -f "$HTTPD" >/dev/null; then
+        return 0
+    fi
+
+
+    return 1
 
 }
 
@@ -176,11 +248,14 @@ apache_running(){
 
 start_mysql(){
 
-    if mysql_running
-    then
-        echo "MySQL already running"
+    if mysql_running; then
+
+        echo -e "MySQL: ${YELLOW}already running${RESET}"
+
     else
-        sudo "$XAMPP" startmysql
+
+        run "Starting MySQL..." sudo "$XAMPP" startmysql
+
     fi
 
 }
@@ -189,11 +264,55 @@ start_mysql(){
 
 stop_mysql(){
 
-    if mysql_running
-    then
-        sudo "$XAMPP" stopmysql
+    if mysql_running; then
+
+
+        run "Stopping MySQL..." sudo "$XAMPP" stopmysql
+
+
+        sleep 2
+
+
+        PIDS=$(pgrep -f "$MYSQLD")
+
+
+        if [ -n "$PIDS" ]; then
+
+
+            echo -e "${YELLOW}XAMPP did not stop MySQL, forcing shutdown...${RESET}"
+
+
+            for PID in $PIDS
+            do
+
+                echo "Force stopping MySQL process: $PID"
+
+                sudo kill -9 "$PID"
+
+            done
+
+
+            sleep 2
+
+        fi
+
+
+
+        if pgrep -f "$MYSQLD" >/dev/null; then
+
+            echo -e "${RED}MySQL still running${RESET}"
+
+        else
+
+            echo -e "MySQL: ${GREEN}stopped${RESET}"
+
+        fi
+
+
     else
-        echo "MySQL already stopped"
+
+        echo -e "MySQL: ${YELLOW}already stopped${RESET}"
+
     fi
 
 }
@@ -202,11 +321,14 @@ stop_mysql(){
 
 start_apache(){
 
-    if apache_running
-    then
-        echo "Apache already running"
+    if apache_running; then
+
+        echo -e "Apache: ${YELLOW}already running${RESET}"
+
     else
-        sudo "$XAMPP" startapache
+
+        run "Starting Apache..." sudo "$XAMPP" startapache
+
     fi
 
 }
@@ -215,11 +337,16 @@ start_apache(){
 
 stop_apache(){
 
-    if apache_running
-    then
-        sudo "$XAMPP" stopapache
+    if apache_running; then
+
+        run "Stopping Apache..." sudo "$XAMPP" stopapache
+
+        echo -e "Apache: ${GREEN}stopped${RESET}"
+
     else
-        echo "Apache already stopped"
+
+        echo -e "Apache: ${YELLOW}already stopped${RESET}"
+
     fi
 
 }
@@ -229,26 +356,64 @@ stop_apache(){
 status(){
 
     echo ""
+
     echo -e "${BOLD}XAMPP Status${RESET}"
     echo "------------"
 
 
-    if mysql_running
-    then
+    if mysql_running; then
         echo -e "MySQL:  ${GREEN}running${RESET}"
     else
         echo -e "MySQL:  ${RED}stopped${RESET}"
     fi
 
 
-    if apache_running
-    then
+
+    if apache_running; then
         echo -e "Apache: ${GREEN}running${RESET}"
     else
         echo -e "Apache: ${RED}stopped${RESET}"
     fi
 
 
+    echo ""
+
+}
+
+
+
+start_all(){
+
+    echo ""
+    echo -e "${CYAN}Starting XAMPP...${RESET}"
+    echo ""
+
+
+    start_mysql
+    start_apache
+
+
+    echo ""
+    echo -e "${GREEN}XAMPP is ready.${RESET}"
+    echo ""
+
+}
+
+
+
+stop_all(){
+
+    echo ""
+    echo -e "${CYAN}Stopping XAMPP...${RESET}"
+    echo ""
+
+
+    stop_apache
+    stop_mysql
+
+
+    echo ""
+    echo -e "${GREEN}XAMPP stopped.${RESET}"
     echo ""
 
 }
@@ -263,37 +428,28 @@ doctor(){
     echo ""
 
 
-    if [ -f "$XAMPP" ]
-    then
-        ok "XAMPP detected"
+    if [ -f "$XAMPP" ]; then
+        echo -e "${GREEN}✓${RESET} XAMPP detected"
     else
-        fail "XAMPP not found"
+        echo -e "${RED}✗${RESET} XAMPP missing"
     fi
 
 
-    if [ -f "$MYSQLD" ]
-    then
-        ok "MySQL detected"
+
+    if [ -f "$MYSQLD" ]; then
+        echo -e "${GREEN}✓${RESET} MySQL detected"
     else
-        fail "MySQL missing"
+        echo -e "${RED}✗${RESET} MySQL missing"
     fi
 
 
-    if [ -f "$HTTPD" ]
-    then
-        ok "Apache detected"
+
+    if [ -f "$HTTPD" ]; then
+        echo -e "${GREEN}✓${RESET} Apache detected"
     else
-        fail "Apache missing"
+        echo -e "${RED}✗${RESET} Apache missing"
     fi
 
-
-    echo ""
-
-    echo "Configuration:"
-    echo ""
-
-    echo "XAMPP:"
-    echo "$XAMPP"
 
     echo ""
 
@@ -332,19 +488,6 @@ info(){
 
     echo ""
 
-    if [ -f "$XAMPP" ]; then
-
-        VERSION_OUTPUT=$(sudo "$XAMPP" --version 2>/dev/null)
-
-        echo "XAMPP Version:"
-        echo "$VERSION_OUTPUT"
-
-    fi
-
-
-    echo ""
-
-    echo "Services:"
     status
 
 }
@@ -389,7 +532,6 @@ help(){
     echo ""
 
     echo " xampp open phpmyadmin"
-
     echo ""
 
 }
@@ -398,88 +540,66 @@ help(){
 
 case "$1:$2" in
 
-
 start:)
-    start_mysql
-    start_apache
+    start_all
 ;;
-
 
 stop:)
-    stop_apache
-    stop_mysql
+    stop_all
 ;;
-
 
 restart:)
-    stop_apache
-    stop_mysql
-
+    stop_all
     sleep 2
-
-    start_mysql
-    start_apache
+    start_all
 ;;
-
 
 mysql:start)
     start_mysql
 ;;
 
-
 mysql:stop)
     stop_mysql
 ;;
-
 
 apache:start)
     start_apache
 ;;
 
-
 apache:stop)
     stop_apache
 ;;
-
 
 status:)
     status
 ;;
 
-
 doctor:)
     doctor
 ;;
-
 
 config:)
     show_config
 ;;
 
-
 setup:)
     setup
 ;;
-
 
 info:)
     info
 ;;
 
-
 open:phpmyadmin)
     open_phpmyadmin
 ;;
-
 
 help:)
     help
 ;;
 
-
 *)
     help
 ;;
-
 
 esac
