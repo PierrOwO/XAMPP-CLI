@@ -1,26 +1,30 @@
 #!/bin/bash
 
+VERSION="1.1.0"
+
 XAMPP="/Applications/XAMPP/xamppfiles/xampp"
 MYSQLD="/Applications/XAMPP/xamppfiles/sbin/mysqld"
-APACHE="/Applications/XAMPP/xamppfiles/bin/httpd"
+HTTPD="/Applications/XAMPP/xamppfiles/bin/httpd"
 
 GREEN="\033[32m"
 RED="\033[31m"
 YELLOW="\033[33m"
 CYAN="\033[36m"
+BOLD="\033[1m"
 RESET="\033[0m"
 
 
 spinner() {
 
     local pid=$1
-    local message="$2"
+    local message=$2
 
-    local spin='⠋⠙⠸⠴⠦⠇'
+    local frames=("⠋" "⠙" "⠸" "⠴" "⠦" "⠇")
     local i=0
 
     while kill -0 "$pid" 2>/dev/null; do
-        printf "\r%s %s" "$message" "${spin:i++%6:1}"
+        printf "\r%s %s" "$message" "${frames[$i]}"
+        i=$(( (i+1) % 6 ))
         sleep 0.1
     done
 
@@ -28,14 +32,14 @@ spinner() {
 }
 
 
-run_command() {
+run() {
 
     local message="$1"
     shift
 
     sudo -v
 
-    "$@" >/tmp/xampp_output.log 2>&1 &
+    "$@" >/tmp/xampp-cli.log 2>&1 &
     local pid=$!
 
     spinner "$pid" "$message"
@@ -43,95 +47,88 @@ run_command() {
     wait "$pid"
 
     if [ $? -ne 0 ]; then
-        echo -e "${RED}Command failed${RESET}"
-        cat /tmp/xampp_output.log
-        exit 1
+        echo -e "${RED}✗ Failed${RESET}"
+        cat /tmp/xampp-cli.log
+        return 1
     fi
 }
 
 
 mysql_running() {
-    pgrep -f "$MYSQLD" >/dev/null
+
+    sudo "$XAMPP" status 2>/dev/null | grep -qi "MySQL is running"
+
 }
 
 
 apache_running() {
-    pgrep -f "$APACHE" >/dev/null
+
+    sudo "$XAMPP" status 2>/dev/null | grep -qi "Apache is running"
+
 }
 
 
-kill_mysql_process() {
-
-    local PID
-
-    PID=$(pgrep -f "$MYSQLD")
-
-    if [ -n "$PID" ]; then
-        sudo kill "$PID"
-
-        sleep 3
-
-        if pgrep -f "$MYSQLD" >/dev/null; then
-            sudo kill -9 "$PID"
-        fi
-    fi
-}
-
-
-mysql_start() {
+start_mysql() {
 
     if mysql_running; then
-        echo -e "${YELLOW}MySQL already running.${RESET}"
+        echo -e "MySQL: ${YELLOW}already running${RESET}"
     else
-        run_command "Starting MySQL..." sudo "$XAMPP" startmysql
+        run "Starting MySQL..." sudo "$XAMPP" startmysql
     fi
 }
 
 
-mysql_stop() {
+stop_mysql() {
 
     if mysql_running; then
 
-        run_command "Stopping MySQL..." sudo "$XAMPP" stopmysql
+        run "Stopping MySQL..." sudo "$XAMPP" stopmysql
 
         sleep 2
 
         if mysql_running; then
-            echo -e "${YELLOW}Forcing MySQL shutdown...${RESET}"
-            kill_mysql_process
+            echo -e "${YELLOW}Force stopping MySQL...${RESET}"
+
+            PID=$(pgrep -f "$MYSQLD")
+
+            if [ -n "$PID" ]; then
+                sudo kill -9 "$PID"
+            fi
         fi
 
-        echo -e "${GREEN}MySQL stopped.${RESET}"
+        echo -e "MySQL: ${GREEN}stopped${RESET}"
 
     else
-        echo -e "${YELLOW}MySQL already stopped.${RESET}"
+        echo -e "MySQL: ${YELLOW}already stopped${RESET}"
     fi
 }
 
 
-apache_start() {
+start_apache() {
 
     if apache_running; then
-        echo -e "${YELLOW}Apache already running.${RESET}"
+        echo -e "Apache: ${YELLOW}already running${RESET}"
     else
-        run_command "Starting Apache..." sudo "$XAMPP" startapache
+        run "Starting Apache..." sudo "$XAMPP" startapache
     fi
 }
 
 
-apache_stop() {
+stop_apache() {
 
     if apache_running; then
-        run_command "Stopping Apache..." sudo "$XAMPP" stopapache
+        run "Stopping Apache..." sudo "$XAMPP" stopapache
+        echo -e "Apache: ${GREEN}stopped${RESET}"
     else
-        echo -e "${YELLOW}Apache already stopped.${RESET}"
+        echo -e "Apache: ${YELLOW}already stopped${RESET}"
     fi
 }
 
 
 status() {
 
-    echo "XAMPP Status"
+    echo ""
+    echo -e "${BOLD}XAMPP Status${RESET}"
     echo "------------"
 
     if mysql_running; then
@@ -140,42 +137,111 @@ status() {
         echo -e "MySQL:  ${RED}stopped${RESET}"
     fi
 
+
     if apache_running; then
         echo -e "Apache: ${GREEN}running${RESET}"
     else
         echo -e "Apache: ${RED}stopped${RESET}"
     fi
+
+    echo ""
+
+}
+
+
+start_all() {
+
+    echo ""
+    echo -e "${CYAN}Starting XAMPP...${RESET}"
+    echo ""
+
+    start_mysql
+    start_apache
+
+    echo ""
+    echo -e "${GREEN}XAMPP is ready.${RESET}"
+    echo ""
+
+}
+
+
+stop_all() {
+
+    echo ""
+    echo -e "${CYAN}Stopping XAMPP...${RESET}"
+    echo ""
+
+    stop_apache
+    stop_mysql
+
+    echo ""
+    echo -e "${GREEN}XAMPP stopped.${RESET}"
+    echo ""
+
+}
+
+
+help() {
+
+    echo ""
+    echo -e "${BOLD}XAMPP CLI v$VERSION${RESET}"
+    echo ""
+    echo "Usage:"
+    echo ""
+    echo "  xampp start"
+    echo "  xampp stop"
+    echo "  xampp restart"
+    echo ""
+    echo "  xampp mysql start"
+    echo "  xampp mysql stop"
+    echo ""
+    echo "  xampp apache start"
+    echo "  xampp apache stop"
+    echo ""
+    echo "  xampp status"
+    echo "  xampp help"
+    echo ""
+
 }
 
 
 case "$1:$2" in
 
 
-mysql:start)
-    mysql_start
+start:)
+    start_all
 ;;
+
+
+stop:)
+    stop_all
+;;
+
+
+restart:)
+    stop_all
+    sleep 2
+    start_all
+;;
+
+
+mysql:start)
+    start_mysql
+;;
+
 
 mysql:stop)
-    mysql_stop
-;;
-
-mysql:restart)
-    mysql_stop
-    mysql_start
+    stop_mysql
 ;;
 
 
 apache:start)
-    apache_start
+    start_apache
 ;;
+
 
 apache:stop)
-    apache_stop
-;;
-
-apache:restart)
-    apache_stop
-    apache_start
+    stop_apache
 ;;
 
 
@@ -184,19 +250,13 @@ status:)
 ;;
 
 
+help:)
+    help
+;;
+
+
 *)
-    echo ""
-    echo "Usage:"
-    echo ""
-    echo "  xampp mysql start"
-    echo "  xampp mysql stop"
-    echo "  xampp mysql restart"
-    echo ""
-    echo "  xampp apache start"
-    echo "  xampp apache stop"
-    echo "  xampp apache restart"
-    echo ""
-    echo "  xampp status"
+    help
 ;;
 
 esac
